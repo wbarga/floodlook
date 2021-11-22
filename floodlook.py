@@ -5,10 +5,16 @@ import sys
 import sqlite3
 
 
+
+#Setting the global variables
+flood_db = "data/flooddata.db"
+# this sets the gauge to query, but need to remember to remove this later to make it check various
+which_gauge = "mrow"
+tree = "null"
+root = "null"
+
 ### this will create a connection to the Sqlite # DB
 ### except it doesn't do anything until I do the other stuff
-flood_db = "data/flooddata.db"
-
 def sqlitetestconnect():
     try:
         sqliteConnection = sqlite3.connect(flood_db)
@@ -57,28 +63,29 @@ def readSqliteTable(rowcount):
         if sqliteConnection:
             sqliteConnection.close()
             print("The SQLite connection is closed")
-### this can test the DB connection by printing the full observations table
+### uncomment these to do the basic sql connection tests
 #rowcount = 2
 #readSqliteTable(rowcount)
 #Just for testing
 #sqlitetestconnect()
+#sys.exit("Stopped bc we're testing")
 
 
-
-def insertObservationIntoTable(observation_time, observation_stage, observation_flow):
+def insertObservationIntoTable(obs_time_value, obs_stage_value, obs_flow_value, obs_gauge_id_value):
     try:
         sqliteConnection = sqlite3.connect(flood_db)
         cursor = sqliteConnection.cursor()
         print("Connected to SQLite")
 
-        sqlite_insert_with_param = """INSERT INTO observations
-                          (observation_time, observation_stage, observation_flow)
-                          VALUES (?, ?, ?);"""
-
-        data_tuple = (observation_time, observation_stage, observation_flow)
+        sqlite_insert_with_param = """
+        INSERT OR IGNORE INTO observations
+            (observation_time, observation_stage, observation_flow, observation_gauge_id)
+            VALUES (?, ?, ?, ?);
+                          """
+        data_tuple = (obs_time_value, obs_stage_value, obs_flow_value, obs_gauge_id_value)
         cursor.execute(sqlite_insert_with_param, data_tuple)
         sqliteConnection.commit()
-        print("Python Variables inserted successfully into SqliteDb_developers table")
+        print("Query executed successfully")
 
         cursor.close()
 
@@ -89,19 +96,10 @@ def insertObservationIntoTable(observation_time, observation_stage, observation_
             sqliteConnection.close()
             print("The SQLite connection is closed")
 
-#insertObservationIntoTable("another time", 345, 356)
-#insertObservationIntoTable("yet anoehrtera", 456, 234)
 
-
-#sys.exit("Stopped bc we're testing")
-
-
-
-url = "https://water.weather.gov/ahps2/hydrograph_to_xml.php?gage=mrow1&output=xml"
-tree = "null"
-root = "null"
-
-def getdata(url):
+def getdata(which_gauge):
+    global tree, root
+    url = "https://water.weather.gov/ahps2/hydrograph_to_xml.php?gage="+ which_gauge +"1&output=xml"
     response = urllib.request.urlopen(url)
     tree = ET.parse(response)
     root = tree.getroot()
@@ -110,14 +108,16 @@ def getdata(url):
     guage_id = root.attrib.get("id")
     gen_time = root.attrib.get("generationtime")
     print(gen_time)
+    print(tree)
 
-#sys.exit()
+
 #prints each observed reading
-def writeobservations():
+def parseobservations():
     for elem in tree.iterfind("observed/datum"):
         stage = "None"
         datetime = "None"
         flow = "None"
+        obs_gauge_id_value = root.attrib.get("id")
         for child in elem:
             if str(child.attrib.get("name")) == "Stage":
                 stage = str(child.text)
@@ -125,12 +125,13 @@ def writeobservations():
                 datetime = str(child.text)
             if str(child.attrib.get("name")) == "Flow":
                 flow = str(child.text)
-        print("Observation:")
-        print("Date and time: "+ datetime)
-        print("Flood Stage: " + stage)
-        print("Flow: "+ flow)
+
+#        print("Observation:")
+#        print("Date and time: "+ datetime)
+#        print("Flood Stage: " + stage)
+#        print("Flow: "+ flow)
         print("_____________________")
-        insertObservationIntoTable(datetime, stage, flow)
+        insertObservationIntoTable(datetime, stage, flow, obs_gauge_id_value)
 
 def writeforecast():
     for elem in tree.iterfind("forecast/datum"):
@@ -151,5 +152,6 @@ def writeforecast():
         print("_____________________")
 
 
-getdata(url)
-writeobservations()
+getdata(which_gauge)
+print("Global Tree:" + str(tree))
+parseobservations()
