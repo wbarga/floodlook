@@ -9,9 +9,9 @@ import sqlite3
 #Setting the global variables
 flood_db = "data/flooddata.db"
 # this sets the gauge to query, but need to remember to remove this later to make it check various
-which_gauge = "mrow"
-tree = "null"
-root = "null"
+which_gauge = "MROW1"
+#tree = "null"
+#root = "null"
 
 ### this will create a connection to the Sqlite # DB
 ### except it doesn't do anything until I do the other stuff
@@ -71,7 +71,7 @@ def readSqliteTable(rowcount):
 #sys.exit("Stopped bc we're testing")
 
 
-def insertObservationIntoTable(obs_time_value, obs_stage_value, obs_flow_value, obs_gauge_id_value):
+def insertObservationIntoTable(observation_tuple):
     try:
         sqliteConnection = sqlite3.connect(flood_db)
         cursor = sqliteConnection.cursor()
@@ -82,7 +82,7 @@ def insertObservationIntoTable(obs_time_value, obs_stage_value, obs_flow_value, 
             (observation_time, observation_stage, observation_flow, observation_gauge_id)
             VALUES (?, ?, ?, ?);
                           """
-        data_tuple = (obs_time_value, obs_stage_value, obs_flow_value, obs_gauge_id_value)
+        data_tuple = observation_tuple
         cursor.execute(sqlite_insert_with_param, data_tuple)
         sqliteConnection.commit()
         print("Query executed successfully")
@@ -99,7 +99,8 @@ def insertObservationIntoTable(obs_time_value, obs_stage_value, obs_flow_value, 
 
 def getdata(which_gauge):
     global tree, root
-    url = "https://water.weather.gov/ahps2/hydrograph_to_xml.php?gage="+ which_gauge +"1&output=xml"
+    print("Executing getdata")
+    url = "https://water.weather.gov/ahps2/hydrograph_to_xml.php?gage="+ which_gauge +"&output=xml"
     response = urllib.request.urlopen(url)
     tree = ET.parse(response)
     root = tree.getroot()
@@ -107,12 +108,36 @@ def getdata(which_gauge):
 
     guage_id = root.attrib.get("id")
     gen_time = root.attrib.get("generationtime")
-    print(gen_time)
-    print(tree)
+    #print(gen_time)
+    #print(tree)
+    return tree
+
+# Queries the DB to get the current observation_stage
+
+def get_stored_observations(flood_db):
+    tempDB = sqlite3.connect(flood_db)
+    stored_obs_list = []
+#    tempDB.row_factory = sqlite3.Row
+    stored_observations = tempDB.execute("""
+        SELECT
+            observation_time,
+            observation_stage,
+            observation_flow,
+            observation_gauge_id
+        FROM
+            observations
+
+            """).fetchall()
+#    for item in stored_observations:
+#        stored_observations.append({k: item[k] for k in item.keys()})
+    print("You've got "+ str(len(stored_observations))+ " observations stored.")
+    tempDB.close()
+    return stored_observations
 
 
 #prints each observed reading
-def parseobservations():
+def parseobservations(tree):
+    obs_list = []
     for elem in tree.iterfind("observed/datum"):
         stage = "None"
         datetime = "None"
@@ -120,24 +145,32 @@ def parseobservations():
         obs_gauge_id_value = root.attrib.get("id")
         for child in elem:
             if str(child.attrib.get("name")) == "Stage":
-                stage = str(child.text)
+                stage = float(child.text)
             if child.attrib.get("timezone") == "UTC":
                 datetime = str(child.text)
             if str(child.attrib.get("name")) == "Flow":
-                flow = str(child.text)
-
+                flow = float(child.text)
+#            obs_entry_list = {"stage": stage, "datetime": datetime, "flow": flow, "gauge_id": obs_gauge_id_value}
+            obs_entry_list = (datetime, stage, flow, obs_gauge_id_value)
+#        print(obs_entry_list)
 #        print("Observation:")
 #        print("Date and time: "+ datetime)
 #        print("Flood Stage: " + stage)
 #        print("Flow: "+ flow)
-        print("_____________________")
-        insertObservationIntoTable(datetime, stage, flow, obs_gauge_id_value)
-
-def writeforecast():
+#        print("_____________________")
+        obs_list.append(obs_entry_list)
+#        insertObservationIntoTable(datetime, stage, flow, obs_gauge_id_value)
+    print(len(obs_list))
+#    for item in obs_list:
+#        print(item)
+    return obs_list
+def parseforecast(tree):
+    forecast_list = []
     for elem in tree.iterfind("forecast/datum"):
         stage = "None"
         datetime = "None"
         flow = "None"
+        forec_gauge_id_value = root.attrib.get("id")
         for child in elem:
             if child.attrib.get("name") == "Stage":
                 stage = str(child.text)
@@ -145,13 +178,44 @@ def writeforecast():
                 datetime = str(child.text)
             if child.attrib.get("name") == "Flow":
                 flow = str(child.text)
-        print("Forecast:")
-        print("Date and time: "+ datetime)
-        print("Flood Stage: " + stage)
-        print("Flow: "+ flow)
-        print("_____________________")
+# this is for when I'm making it a dictionary but still figuring that out
+#            forecast_entry_list = {"datetime":datetime, "stage": stage, "flow": flow, "guage_id": forec_gauge_id_value}
+#            forecast_entry_list = (datetime, stage, flow, forec_guage_id_value)
+#        print("Forecast:")
+#        print("Date and time: "+ datetime)
+#        print("Flood Stage: " + stage)
+#        print("Flow: "+ flow)
+#        print("_____________________")
+        forecast_list.append(forecast_entry_list)
+#    print(len(forecast_list))
+#    print(forecast_list)
+    return forecast_list
 
+def remove_duplicates(list1, list2):
+    for element in list1:
+        if element in list2:
+            list2.remove(element)
+    return list2
 
-getdata(which_gauge)
-print("Global Tree:" + str(tree))
-parseobservations()
+def main():
+    print("executing main")
+    tree = getdata(which_gauge)
+    stored_observations = get_stored_observations(flood_db)
+    print("______________STORED OBSERVATIONS____________")
+    for item in stored_observations:
+        print(item)
+    print("____________ONLINE OBSERVATIONS_____________")
+    observation_list =   parseobservations(tree)
+#    forecast_list = parseforecast(tree)
+#    print(len(forecast_list))
+    for item in observation_list:
+#        print("observation")
+        print(item)
+#    for item in forecast_list:
+#        print(item)
+    deduped_obs_list = remove_duplicates(stored_observations, observation_list)
+    print("deduped:")
+    for item in deduped_obs_list:
+        insertObservationIntoTable(item)
+        print(item)
+main()
