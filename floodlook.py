@@ -9,11 +9,10 @@ start_time = time.time()
 
 #Setting the global variables
 flood_db = "data/flooddata.db"
-# this sets the gauge to query, but need to remember to remove this later to make it check various
-which_gauge = "CRNW1"
-#tree = "null"
-#root = "null"
 
+
+
+#this is no longer used but I left it in there and will delete later
 def insertObservationIntoTable(observation_list):
     try:
         sqliteConnection = sqlite3.connect(flood_db)
@@ -85,8 +84,20 @@ def insertIntoTable(tuple_list, table):
             print("The SQLite connection is closed")
 
 
+def get_gauges(flood_db):
+    tempDB = sqlite3.connect(flood_db)
+#    stored_obs_list = []
+    gauge_list = tempDB.execute("""
+        SELECT
+            gauge_id
+        FROM
+            gauges
+            """).fetchall()
+    print("You've got "+ str(len(gauge_list))+ " gauges that we like to look up.")
+    tempDB.close()
+    return gauge_list
 
-
+# pulls the data from the internet website
 def getonlinedata(which_gauge):
     global tree, root
     print("Executing getdata")
@@ -94,16 +105,12 @@ def getonlinedata(which_gauge):
     response = urllib.request.urlopen(url)
     tree = ET.parse(response)
     root = tree.getroot()
-    #print(list(root.text))
-
     guage_id = root.attrib.get("id")
     gen_time = root.attrib.get("generationtime")
-    #print(gen_time)
-    #print(tree)
     return tree
 
 
-# Queries the DB to get the current observation_stage
+# Queries the DB to get the existing observation records
 def get_stored_observations(flood_db):
     tempDB = sqlite3.connect(flood_db)
 #    stored_obs_list = []
@@ -121,14 +128,14 @@ def get_stored_observations(flood_db):
     tempDB.close()
     return stored_observations
 
-# Queries the DB to get the current observation_stage
+# Queries the DB to get the stored forecasts
 def get_stored_forecasts(flood_db):
     tempDB = sqlite3.connect(flood_db)
-#    stored_obs_list = []
     stored_forecasts = tempDB.execute("""
         SELECT
             projection_time_added,
             projection_time,
+            projection_stage,
             projection_flow,
             projection_gauge_id
         FROM
@@ -156,14 +163,14 @@ def parseobservations(tree):
                 datetime = str(child.text)
             if str(child.attrib.get("name")) == "Flow":
                 flow = float(child.text)
-#            obs_entry_list = {"stage": stage, "datetime": datetime, "flow": flow, "gauge_id": obs_gauge_id_value}
             obs_entry_list = (datetime, stage, flow, obs_gauge_id_value)
         obs_list.append(obs_entry_list)
-    print(len(obs_list))
+    print("there's " + str(len(obs_list))+ " observations in the xml")
     return obs_list
 
-# Parses the online forecasts and returns as list of tuples
 
+
+# Parses the online forecasts and returns as list of tuples
 def parseforecast(tree):
     forecast_list = []
     forec_issue_time = tree.find("forecast").attrib.get("issued")
@@ -174,18 +181,14 @@ def parseforecast(tree):
         flow = "None"
         for child in elem:
             if child.attrib.get("name") == "Stage":
-                stage = str(child.text)
+                stage = float(child.text)
             if child.attrib.get("timezone") == "UTC":
                 datetime = str(child.text)
             if child.attrib.get("name") == "Flow":
-                flow = str(child.text)
+                flow = float(child.text)
         forec_entry_list = (forec_issue_time, datetime, stage, flow, forec_gauge_id_value)
-# this is for when I'm making it a dictionary but still figuring that out
-#            forecast_entry_list = {"datetime":datetime, "stage": stage, "flow": flow, "guage_id": forec_gauge_id_value}
-#            forecast_entry_list = (datetime, stage, flow, forec_guage_id_value)
         forecast_list.append(forec_entry_list)
-#    print(len(forecast_list))
-#    print(forecast_list)
+
     return forecast_list
 
 
@@ -197,40 +200,39 @@ def remove_duplicates(list1, list2):
             list2.remove(element)
     return list2
 
+# this is kinda like the main and ties most of the other crap
+# together but inside the for loop from main
+
+def pull_and_write_main(which_gauge):
+    print("_____________________________")
+    print("running pull and write for "+ which_gauge)
+    tree = getonlinedata(which_gauge)
+
+    stored_observations = get_stored_observations(flood_db)
+    print("we've got "+str(len(stored_observations))+ " stored observations in the DB")
+    forecast_list = parseforecast(tree)
+    print("we've got "+ str(len(forecast_list))+ " forecasts entries that we found online")
+    observation_list =   parseobservations(tree)
+    stored_forecasts = get_stored_forecasts(flood_db)
+    deduped_forec_list = remove_duplicates(stored_forecasts, forecast_list)
+    print("we have "+ str(len(deduped_forec_list))+ " fresh forecasts to add")
+    deduped_obs_list = remove_duplicates(stored_observations, observation_list)
+    print("we have "+ str(len(deduped_obs_list))+ " fresh observations to add")
+    if len(deduped_obs_list)>0:
+        insertIntoTable(deduped_obs_list, "observations")
+    if len(deduped_forec_list)>0:
+        insertIntoTable(deduped_forec_list, "forecasts")
+    print("_____________________________")
+
 
 
 def main():
-    print("executing main")
-    tree = getonlinedata(which_gauge)
-    stored_observations = get_stored_observations(flood_db)
-    print("______________STORED OBSERVATIONS____________")
-    print("we've got "+str(len(stored_observations))+ " stored observations in the DB")
-    print("_____________Online Forecasts___________")
-    forecast_list = parseforecast(tree)
-    print("we've got "+ str(len(forecast_list))+ " forecasts entries that we found online")
-    print("____________Online Observations_______________")
-    observation_list =   parseobservations(tree)
-    stored_forecasts = get_stored_forecasts(flood_db)
-    for item in stored_forecasts:
-        print(item)
-#    forecast_list = parseforecast(tree)
-#    print(len(forecast_list))
-#    for item in observation_list:
-#        print(item)
-#    for item in forecast_list:
-#        print(item)
-    deduped_forec_list = remove_duplicates(stored_forecasts, forecast_list)
-    print("we have "+ str(len(deduped_forec_list))+ " fresh forecasts to add")
-
-    deduped_obs_list = remove_duplicates(stored_observations, observation_list)
-    print("we have "+ str(len(deduped_obs_list))+ " fresh observations to add")
-#    print("deduped:")
-#    for item in deduped_obs_list:
-#        print(item)
-    insertIntoTable(deduped_obs_list, "observations")
-    insertIntoTable(deduped_forec_list, "forecasts")
+    gauge_list = get_gauges(flood_db)
+    print(gauge_list)
+    for gauge in gauge_list:
+        pull_and_write_main(gauge[0])
 
 
 
 main()
-print( "My program took", time.time() - start_time, "to run")
+print( "This whooooole thing took ", time.time() - start_time, "to run")
