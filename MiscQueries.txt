@@ -1,0 +1,32 @@
+#Selects the most recent 24 hours of records from
+observations table and displays in local time
+
+
+SELECT
+strftime('%d/%m/%Y, %H:%M',datetime(observation_time,'localtime')),
+observation_stage,
+observation_flow,
+observation_gauge_id
+FROM
+observations
+WHERE
+observation_time > datetime('now', '-24 hours')
+
+
+## This one sorts them for fun
+SELECT
+
+strftime('%d/%m/%Y, %H:%M',datetime(observation_time,'localtime')),
+observation_stage,
+observation_flow,
+observation_gauge_id
+
+FROM
+observations
+
+WHERE
+observation_time > datetime('now', '-24 hours')
+
+ORDER BY
+observation_gauge_id ASC,
+observation_time DESC;

@@ -3,13 +3,14 @@ import urllib.request
 import xmltodict
 import sys
 import sqlite3
-
+import time
+start_time = time.time()
 
 
 #Setting the global variables
 flood_db = "data/flooddata.db"
 # this sets the gauge to query, but need to remember to remove this later to make it check various
-which_gauge = "MROW1"
+which_gauge = "CRNW1"
 #tree = "null"
 #root = "null"
 
@@ -71,7 +72,7 @@ def readSqliteTable(rowcount):
 #sys.exit("Stopped bc we're testing")
 
 
-def insertObservationIntoTable(observation_tuple):
+def insertObservationIntoTable(observation_list):
     try:
         sqliteConnection = sqlite3.connect(flood_db)
         cursor = sqliteConnection.cursor()
@@ -82,8 +83,7 @@ def insertObservationIntoTable(observation_tuple):
             (observation_time, observation_stage, observation_flow, observation_gauge_id)
             VALUES (?, ?, ?, ?);
                           """
-        data_tuple = observation_tuple
-        cursor.execute(sqlite_insert_with_param, data_tuple)
+        cursor.executemany(sqlite_insert_with_param, observation_list)
         sqliteConnection.commit()
         print("Query executed successfully")
 
@@ -112,12 +112,11 @@ def getdata(which_gauge):
     #print(tree)
     return tree
 
-# Queries the DB to get the current observation_stage
 
+# Queries the DB to get the current observation_stage
 def get_stored_observations(flood_db):
     tempDB = sqlite3.connect(flood_db)
     stored_obs_list = []
-#    tempDB.row_factory = sqlite3.Row
     stored_observations = tempDB.execute("""
         SELECT
             observation_time,
@@ -128,8 +127,6 @@ def get_stored_observations(flood_db):
             observations
 
             """).fetchall()
-#    for item in stored_observations:
-#        stored_observations.append({k: item[k] for k in item.keys()})
     print("You've got "+ str(len(stored_observations))+ " observations stored.")
     tempDB.close()
     return stored_observations
@@ -181,21 +178,21 @@ def parseforecast(tree):
 # this is for when I'm making it a dictionary but still figuring that out
 #            forecast_entry_list = {"datetime":datetime, "stage": stage, "flow": flow, "guage_id": forec_gauge_id_value}
 #            forecast_entry_list = (datetime, stage, flow, forec_guage_id_value)
-#        print("Forecast:")
-#        print("Date and time: "+ datetime)
-#        print("Flood Stage: " + stage)
-#        print("Flow: "+ flow)
-#        print("_____________________")
         forecast_list.append(forecast_entry_list)
 #    print(len(forecast_list))
 #    print(forecast_list)
     return forecast_list
 
+
+
+# Removes entries from parsed online list that already exist in DB
 def remove_duplicates(list1, list2):
     for element in list1:
         if element in list2:
             list2.remove(element)
     return list2
+
+
 
 def main():
     print("executing main")
@@ -209,13 +206,16 @@ def main():
 #    forecast_list = parseforecast(tree)
 #    print(len(forecast_list))
     for item in observation_list:
-#        print("observation")
         print(item)
 #    for item in forecast_list:
 #        print(item)
     deduped_obs_list = remove_duplicates(stored_observations, observation_list)
     print("deduped:")
     for item in deduped_obs_list:
-        insertObservationIntoTable(item)
         print(item)
+    insertObservationIntoTable(deduped_obs_list)
+
+
+
 main()
+print( "My program took", time.time() - start_time, "to run")
