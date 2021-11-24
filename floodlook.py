@@ -45,13 +45,13 @@ def insertIntoTable(tuple_list, table):
         print("Connected to SQLite - " + flood_db)
         sqlite_insert_query = "None"
         forecast_insert_query = """
-        INSERT INTO projections
-            (projection_time_added,
-            projection_time,
-            projection_stage,
-            projection_flow,
-            projection_gauge_id)
-            VALUES (?, ?, ?, ?, ?);
+        INSERT INTO forecast
+            (forecast_time_added,
+            forecast_time,
+            forecast_stage,
+            forecast_flow,
+            forecast_gauge_id)
+            VALUES (?, ?, ?, ?, (select gauge_pk from gauges where gauge_id = ?));
         """
 
         obs_insert_query = """
@@ -60,7 +60,7 @@ def insertIntoTable(tuple_list, table):
             observation_stage,
             observation_flow,
             observation_gauge_id)
-            VALUES (?, ?, ?, ?);
+            VALUES (?, ?, ?, (select gauge_pk from gauges where gauge_id = ?));
             """
 
         if table == "observations":
@@ -115,13 +115,15 @@ def get_stored_observations(flood_db):
     tempDB = sqlite3.connect(flood_db)
 #    stored_obs_list = []
     stored_observations = tempDB.execute("""
-        SELECT
-            observation_time,
-            observation_stage,
-            observation_flow,
-            observation_gauge_id
+SELECT
+            observations.observation_time,
+            observations.observation_stage,
+            observations.observation_flow,
+            gauges.gauge_id
         FROM
-            observations
+            observations INNER JOIN gauges
+		ON
+		observations.observation_gauge_id = gauges.gauge_pk
 
             """).fetchall()
     print("You've got "+ str(len(stored_observations))+ " observations stored.")
@@ -133,13 +135,15 @@ def get_stored_forecasts(flood_db):
     tempDB = sqlite3.connect(flood_db)
     stored_forecasts = tempDB.execute("""
         SELECT
-            projection_time_added,
-            projection_time,
-            projection_stage,
-            projection_flow,
-            projection_gauge_id
+            forecast.forecast_time_added,
+            forecast.forecast_time,
+            forecast.forecast_stage,
+            forecast.forecast_flow,
+            gauges.gauge_id
         FROM
-            projections
+            forecast INNER JOIN gauges
+		on
+		forecast.forecast_gauge_id = gauge_pk
 
             """).fetchall()
     print("You've got "+ str(len(stored_forecasts))+ " forecasts stored.")
@@ -172,6 +176,7 @@ def parseobservations(tree):
 
 # Parses the online forecasts and returns as list of tuples
 def parseforecast(tree):
+    print("+++++Parsing Forecasts+++++")
     forecast_list = []
     forec_issue_time = tree.find("forecast").attrib.get("issued")
     forec_gauge_id_value = root.attrib.get("id")
@@ -209,6 +214,7 @@ def pull_and_write_main(which_gauge):
     tree = getonlinedata(which_gauge)
 
     stored_observations = get_stored_observations(flood_db)
+
     print("we've got "+str(len(stored_observations))+ " stored observations in the DB")
     forecast_list = parseforecast(tree)
     print("we've got "+ str(len(forecast_list))+ " forecasts entries that we found online")
