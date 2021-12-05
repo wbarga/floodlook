@@ -26,5 +26,7 @@ To install:
             usually 4 letters and a number
         - you'll need an editor for SQLite if you want a GUI. I use the one called "DB Browser for SQLite"
             that comes packaged with Ubuntu
-7. Run script
+7. Install requirements
+    - run pip3 install -r requirements.txt
+8. Run script
     - python3 floodlook.py
