@@ -11,7 +11,7 @@ To install:
 3. create virtual Environment
     - navigate in command line to the project folder
     - on linux, run:
-        python -m venv floodvenv
+        python3 -m venv floodvenv
     - you can call that folder whatever you want, but I called it floodvenv
     - on windows or macos, this process is similar but different. Google it
 4. Activate virtual Environment
