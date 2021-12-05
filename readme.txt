@@ -1,3 +1,10 @@
+This script reads forecast and observation data from select NOAA Flood
+gauges, and writes them to an SQLite database. You can select which gauges
+to watch. There's no provision for viewing or displaying the data, but the
+SQLite DB should interface with most visualization tools. If you want continuous
+data, you should be able to set this up as a scheduled task running
+daily.
+
 To install:
 
 1. Make sure you've got git and python3 installed on your computer.
