@@ -8,68 +8,17 @@ import psycopg2
 from psycopg2 import Error
 
 start_time = time.time()
+verbose = False
 
-
-#Setting the global variables
-flood_db = "data/flooddata.db"
-
-### Inserts records into SQLITE observations or projections table
-def insertIntoTable(tuple_list, table):
+## Inserts records into DB after they've been deduped
+def pinsertIntoTable(tuple_list, table, pgconnection):
     try:
-        sqliteConnection = sqlite3.connect(flood_db)
-        cursor = sqliteConnection.cursor()
-        print("Connected to SQLite - " + flood_db)
-        sqlite_insert_query = "None"
-        forecast_insert_query = """
-        INSERT INTO forecast
-            (forecast_time_added,
-            forecast_time,
-            forecast_stage,
-            forecast_flow,
-            forecast_gauge_id)
-            VALUES (?, ?, ?, ?, (select gauge_pk from gauges where gauge_id = ?));
-        """
-
-        obs_insert_query = """
-        INSERT INTO observations
-            (observation_time,
-            observation_stage,
-            observation_flow,
-            observation_gauge_id)
-            VALUES (?, ?, ?, (select gauge_pk from gauges where gauge_id = ?));
-            """
-
-        if table == "observations":
-            sqlite_insert_query = obs_insert_query
-        elif table == "forecasts":
-            sqlite_insert_query = forecast_insert_query
-        else:
-            print("Error: didn't find table query in insertIntoTable")
-            sys.exit()
-        cursor.executemany(sqlite_insert_query, tuple_list)
-        sqliteConnection.commit()
-        print("Query executed successfully")
-
-        cursor.close()
-
-    except sqlite3.Error as error:
-        print("Failed to insert Python variable into sqlite table", error)
-    finally:
-        if sqliteConnection:
-            sqliteConnection.close()
-            print("The SQLite connection is closed")
-
-
-
-## Updated insert function to PF
-def pinsertIntoTable(tuple_list, table):
-    try:
-        connection = psycopg2.connect(user= config.user,
-                                    password= config.password,
-                                    host= config.host,
-                                    port= config.port,
-                                    database= config.database)
-        cursor = connection.cursor()
+#        connection = psycopg2.connect(user= config.user,
+#                                    password= config.password,
+#                                    host= config.host,
+#                                    port= config.port,
+#                                    database= config.database)
+        cursor = pgconnection.cursor()
         pg_insert_query = "None"
         forecast_insert_query = """
         INSERT INTO forecast
@@ -98,64 +47,46 @@ def pinsertIntoTable(tuple_list, table):
             print("Error: didn't find table query in insertIntoTable")
             sys.exit()
         cursor.executemany(pg_insert_query, tuple_list)
-        connection.commit()
+        pgconnection.commit()
         print("Query executed successfully")
 
         cursor.close()
     except (Exception, Error) as error:
         print("Failed to insert Python variable into pg table", error)
-    finally:
+#    finally:
         if connection:
             connection.close()
-            print("The PG connection is closed")
+#            print("The PG connection is closed")
 
 
 
-### gets the gauges from sqlite DB
-def get_gauges(flood_db):
-    tempDB = sqlite3.connect(flood_db)
-#    stored_obs_list = []
-    gauge_list = tempDB.execute("""
-        SELECT
-            gauge_id
-        FROM
-            gauges
-            """).fetchall()
-    print("You've got "+ str(len(gauge_list))+ " gauges that we like to look up.")
-    tempDB.close()
-    return gauge_list
 
 
 ## gets the gauges from postgres DB
-def get_pgauges():
+def get_pgauges(pgconnection):
     try:
-        connection = psycopg2.connect(user= config.user,
-                                    password= config.password,
-                                    host= config.host,
-                                    port= config.port,
-                                    database= config.database)
-        cursor = connection.cursor()
+#        connection = psycopg2.connect(user= config.user,
+#                                    password= config.password,
+#                                    host= config.host,
+#                                    port= config.port,
+#                                    database= config.database)
+        cursor = pgconnection.cursor()
         postgreSQL_select_Query = "select gauge_id from gauges"
 
         cursor.execute(postgreSQL_select_Query)
-        print("Selecting rows from mobile table using cursor.fetchall")
+        print("Grabbing the gaugelist")
         gauge_list = cursor.fetchall()
-
-#        print("Print each row and it's columns values")
-#        print(gauge_list)
 
     except (Exception, psycopg2.Error) as error:
         print("Error while fetching data from PostgreSQL", error)
 
     finally:
         # closing database connection.
-        if connection:
+        if pgconnection:
             cursor.close()
-            connection.close()
-            print("PostgreSQL connection is closed")
-    return gauge_list
-
-
+#            connection.close()
+#            print("PostgreSQL connection is closed")
+        return gauge_list
 
 
 # pulls the data from the internet website
@@ -170,38 +101,14 @@ def getonlinedata(which_gauge):
     gen_time = root.attrib.get("generationtime")
     return tree
 
-
-
-
-
-# Queries the DB to get the existing observation records
-def get_stored_observations(flood_db):
-    tempDB = sqlite3.connect(flood_db)
-    stored_observations = tempDB.execute("""
-SELECT
-            observations.observation_time,
-            observations.observation_stage,
-            observations.observation_flow,
-            gauges.gauge_id
-        FROM
-            observations INNER JOIN gauges
-		ON
-		observations.observation_gauge_id = gauges.gauge_pk
-
-            """).fetchall()
-    print("You've got "+ str(len(stored_observations))+ " observations stored.")
-    tempDB.close()
-    return stored_observations
-
-
 ## Updating observation query to PG
-def pget_stored_observations():
+def pget_stored_observations(pgconnection, which_gauge):
     try:
-        pgconnection = psycopg2.connect(user= config.user,
-                                    password= config.password,
-                                    host= config.host,
-                                    port= config.port,
-                                    database= config.database)
+#        pgconnection = psycopg2.connect(user= config.user,
+#                                    password= config.password,
+#                                    host= config.host,
+#                                    port= config.port,
+#                                    database= config.database)
         cursor = pgconnection.cursor()
         cursor.execute("""
             SELECT
@@ -212,7 +119,7 @@ def pget_stored_observations():
             FROM
                 observations INNER JOIN gauges
             ON
-            observations.observation_gauge_id = gauges.gauge_pk
+                observations.observation_gauge_id = gauges.gauge_pk
 
                 """)
         stored_observations = cursor.fetchall()
@@ -220,46 +127,20 @@ def pget_stored_observations():
         cursor.close()
     except (Exception, Error) as error:
         print("Failed to insert Python variable into pg table", error)
-    finally:
-        if pgconnection:
-            pgconnection.close()
-            print("The PG connection is closed")
+#    finally:
+#        if pgconnection:
+#            pgconnection.close()
+#            print("The PG connection is closed")
     return stored_observations
 
-
-# Queries the SQLite DB to get the stored forecasts
-def get_stored_forecasts(flood_db):
-    pgconnection = psycopg2.connect(user= config.user,
-                                password= config.password,
-                                host= config.host,
-                                port= config.port,
-                                database= config.database)
-    stored_forecasts = pgconnection.execute("""
-        SELECT
-            forecast.forecast_time_added,
-            forecast.forecast_time,
-            forecast.forecast_stage,
-            forecast.forecast_flow,
-            gauges.gauge_id
-        FROM
-            forecast INNER JOIN gauges
-		on
-		forecast.forecast_gauge_id = gauge_pk
-
-            """).fetchall()
-    print("You've got "+ str(len(stored_forecasts))+ " forecasts stored.")
-    tempDB.close()
-    return stored_forecasts
-
-
 # Queries the PG DB to get the stored forecasts
-def pget_stored_forecasts():
+def pget_stored_forecasts(pgconnection, which_gauge):
     try:
-        pgconnection = psycopg2.connect(user= config.user,
-                                    password= config.password,
-                                    host= config.host,
-                                    port= config.port,
-                                    database= config.database)
+#        pgconnection = psycopg2.connect(user= config.user,
+#                                    password= config.password,
+#                                    host= config.host,
+#                                    port= config.port,
+#                                    database= config.database)
         cursor = pgconnection.cursor()
         cursor.execute("""
             SELECT
@@ -278,10 +159,10 @@ def pget_stored_forecasts():
         print("You've got "+ str(len(stored_forecasts))+ " forecasts stored.")
     except (Exception, Error) as error:
         print("Failed to insert Python variable into pg table", error)
-    finally:
-        if pgconnection:
-            pgconnection.close()
-            print("The PG connection is closed")
+#    finally:
+#        if pgconnection:
+#            pgconnection.close()
+#            print("The PG connection is closed")
     return stored_forecasts
 
 
@@ -305,8 +186,6 @@ def parseobservations(tree):
         obs_list.append(obs_entry_list)
     print("there's " + str(len(obs_list))+ " observations in the xml")
     return obs_list
-
-
 
 # Parses the online forecasts and returns as list of tuples
 def parseforecast(tree):
@@ -342,23 +221,26 @@ def remove_duplicates(list1, list2):
 # this is kinda like the main and ties most of the other crap
 # together but inside the for loop from main
 
-def pull_and_write_main(which_gauge):
+def pull_and_write_main(which_gauge,pgconnection):
     print("_____________________________")
     print("running pull and write for "+ which_gauge)
     tree = getonlinedata(which_gauge)
 
-    stored_observations = pget_stored_observations()
+    stored_observations = pget_stored_observations(pgconnection, which_gauge)
 
    # print("we've got "+str(len(stored_observations))+ " stored observations in the DB")
     forecast_list = parseforecast(tree)
     print("we've got "+ str(len(forecast_list))+ " forecasts entries that we found online")
     observation_list =   parseobservations(tree)
+    stored_forecasts = pget_stored_forecasts(pgconnection, which_gauge)
     print("__________observation list____________")
-    for item in observation_list:
-        print(item)
-    stored_forecasts = pget_stored_forecasts()
-    for item in stored_forecasts:
-        print(item)
+    if verbose == True:
+        print("************Here's the fresh observations from the internet************")
+        for item in observation_list:
+            print(item)
+        print("*************Here's all the forecasts we have stored**********")
+        for item in stored_forecasts:
+            print(item)
     if stored_forecasts:
         deduped_forec_list = remove_duplicates(stored_forecasts, forecast_list)
     else:
@@ -370,18 +252,28 @@ def pull_and_write_main(which_gauge):
         deduped_obs_list = observation_list
     print("we have "+ str(len(deduped_obs_list))+ " fresh observations to add")
     if len(deduped_obs_list)>0:
-        pinsertIntoTable(deduped_obs_list, "observations")
+        pinsertIntoTable(deduped_obs_list, "observations",pgconnection)
     if len(deduped_forec_list)>0:
-        pinsertIntoTable(deduped_forec_list, "forecasts")
+        pinsertIntoTable(deduped_forec_list, "forecasts",pgconnection)
     print("_____________________________")
 
 
 
 def main():
-    gauge_list = get_pgauges()
+
+    pgconnection = psycopg2.connect(user= config.user,
+                                password= config.password,
+                                host= config.host,
+                                port= config.port,
+                                database= config.database)
+    gauge_list = get_pgauges(pgconnection)
     print(gauge_list)
     for gauge in gauge_list:
-        pull_and_write_main(gauge[0])
+        pull_and_write_main(gauge[0],pgconnection)
+    if (pgconnection):
+#        cursor.close()
+        pgconnection.close()
+        print("PostgreSQL connection is closed")
 
 
 #Tests connection to external postgres DB, prints DB info
@@ -406,11 +298,11 @@ def test_external_connect():
 
     except (Exception, Error) as error:
         print("Error while connecting to PostgreSQL", error)
-    finally:
-        if (pgconnection):
-            cursor.close()
-            pgconnection.close()
-            print("PostgreSQL connection is closed")
+#    finally:
+#        if (pgconnection):
+#            cursor.close()
+#            pgconnection.close()
+#            print("PostgreSQL connection is closed")
 main()
 #test_external_connect()
 #print(get_pgauges())
