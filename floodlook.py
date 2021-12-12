@@ -1,9 +1,13 @@
 import xml.etree.ElementTree as ET
 import urllib.request
-import xmltodict
 import sys
 import sqlite3
 import time
+import config
+# from config import *
+import psycopg2
+from psycopg2 import Error
+
 start_time = time.time()
 
 
@@ -130,7 +134,7 @@ SELECT
     tempDB.close()
     return stored_observations
 
-# Queries the DB to get the stored forecasts
+# Queries the SQLite DB to get the stored forecasts
 def get_stored_forecasts(flood_db):
     tempDB = sqlite3.connect(flood_db)
     stored_forecasts = tempDB.execute("""
@@ -239,6 +243,35 @@ def main():
         pull_and_write_main(gauge[0])
 
 
+#Tests connection to external postgres DB, prints DB info
+def test_external_connect():
+    try:
+    # Connect to an existing database
+        connection = psycopg2.connect(user= config.user,
+                                    password= config.password,
+                                    host= config.host,
+                                    port= config.port,
+                                    database= config.database)
 
-main()
+        # Create a cursor to perform database operations
+        cursor = connection.cursor()
+        # Print PostgreSQL details
+        print("PostgreSQL server information")
+        print(connection.get_dsn_parameters(), "\n")
+        # Executing a SQL query
+        cursor.execute("SELECT version();")
+        # Fetch result
+        record = cursor.fetchone()
+        print("You are connected to - ", record, "\n")
+
+    except (Exception, Error) as error:
+        print("Error while connecting to PostgreSQL", error)
+    finally:
+        if (connection):
+            cursor.close()
+            connection.close()
+            print("PostgreSQL connection is closed")
+#main()
+test_external_connect()
+
 print( "This whooooole thing took ", time.time() - start_time, "to run")
